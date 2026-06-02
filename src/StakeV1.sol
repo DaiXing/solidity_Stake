@@ -161,6 +161,14 @@ contract StackV1 {
         user.finishedRewards = (pool.rewardPerAmount * user.amount) / e18;
     }
 
+    // 解除质押。本金。
+    // 先把请求，放入队列。防止挤兑。
+    // 必须先结算利息。
+    function unstake(
+        uint256 poolId,
+        uint256 amount
+    ) public updateRewards(poolId) {}
+
     // 取款。本金。
     // 必须先结算利息。
     function withdraw(

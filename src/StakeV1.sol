@@ -112,7 +112,11 @@ contract StackV1 {
 
     // 存款。本金。
     // 存款后，新本金只会参与未来的奖励分配，不会稀释用户已获得的奖励。
-    function deposite(uint256 poolId, uint256 amount) public payable {
+    // 必须先结算利息。
+    function deposite(
+        uint256 poolId,
+        uint256 amount
+    ) public payable updateRewards(poolId) {
         require(block.number >= startBlock, "block not start");
         require(block.number <= endBlock, "block be end");
 
@@ -134,6 +138,17 @@ contract StackV1 {
         User storage user = userMap[poolId][msg.sender];
         // 本金。
         user.amount += realAmount;
+        pool.totalAmount += realAmount;
+
+        // 当前利息已经结算了。下个阶段还未开始。
+        user.finishedRewards = (pool.rewardPerAmount * user.amount) / e18;
+
+        // token转到本合约。
+        if (poolId != 0) {
+            IERC20 erc20 = IERC20(pool.tokenAddr);
+            bool ok = erc20.transferFrom(msg.sender, address(this), realAmount);
+            require(ok, "transferFrom fail");
+        }
     }
 
     // 全部的权重。

@@ -137,6 +137,7 @@ contract StackV1 {
         // eth。原生币
         if (poolId == ETH_POOL_ID) {
             require(amount == 0, "eth do not need amount");
+            require(msg.value > 0, "eth value invalid");
             realAmount = msg.value; // eth
         }
         // token 代币。
@@ -160,6 +161,61 @@ contract StackV1 {
         user.finishedRewards = (pool.rewardPerAmount * user.amount) / e18;
     }
 
+    // 取款。本金。
+    // 必须先结算利息。
+    function withdraw(
+        uint256 poolId,
+        uint256 amount
+    ) public updateRewards(poolId) {
+        require(block.number >= startBlock, "block not start");
+        require(amount > 0, "amount invalid");
+
+        // 池子。
+        Pool storage pool = poolMap[poolId];
+        // 用户
+        User storage user = userMap[poolId][msg.sender];
+
+        require(amount <= user.amount, "user amount not enough");
+
+        // 本金。
+        user.amount -= amount;
+        pool.totalAmount -= amount;
+
+        // 当前利息已经结算了。下个阶段还未开始。
+        user.finishedRewards = (pool.rewardPerAmount * user.amount) / e18;
+
+        // eth。原生币
+        if (poolId == ETH_POOL_ID) {
+            // 转账。
+            (bool ok, ) = payable(msg.sender).call{value: amount}("");
+            require(ok, "eth call fail");
+        }
+        // token 代币。
+        else {
+            // token转到用户。
+            IERC20 erc20 = IERC20(pool.tokenAddr);
+            bool ok = erc20.transferFrom(address(this), msg.sender, amount);
+            require(ok, "transferFrom fail");
+        }
+    }
+
+    // 获得利息。
+    function claimRewards(uint256 poolId) public updateRewards(poolId) {
+        // 池子。
+        Pool storage pool = poolMap[poolId];
+        // 用户
+        User storage user = userMap[poolId][msg.sender];
+
+        // 用户的未提取的利息。
+        uint256 pending = user.pendingRewards;
+        // 清空利息。
+        user.pendingRewards = 0;
+
+        // 把利息发给用户。
+        bool ok = IERC20(rewardAddr).transfer(msg.sender, pending);
+        require(ok, "transfer fail");
+    }
+
     // 全部的权重。
     function getTotalWeight() private returns (uint256 weightSum) {
         // 累加总权重。
@@ -171,7 +227,9 @@ contract StackV1 {
 
     // 计算利息。 每个用户操作前，触发更新自己的利息。
     modifier updateRewards(uint256 poolId) {
+        // 更新池子。
         updatePool(poolId);
+        // 更新用户。
         updateUser(poolId);
         _;
     }
@@ -179,6 +237,8 @@ contract StackV1 {
     // 更新单个池子。
     function updatePool(uint256 poolId) private {
         Pool storage pool = poolMap[poolId];
+        require(pool.weight > 0, "pool not found");
+
         // 区块不对。
         if (block.number <= pool.lastUpdateBlock) {
             return;

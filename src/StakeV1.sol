@@ -16,8 +16,6 @@ struct Pool {
     uint256 lastUpdateBlock;
     // 本金。累加。
     uint256 totalAmount;
-    // 获得的利息。累加。
-    uint256 rewardSum;
     // 每个本金的利息。累计。
     // 核心原则：在需要计算用户奖励之前，确保 rewardPerShare 是最新的。
     uint256 rewardPerAmount;
@@ -34,6 +32,7 @@ contract StackV1 {
     using Strings for uint256;
     using Math for uint256;
     uint256 constant e18 = 1 ether;
+    uint256 constant ETH_POOL_ID = 0;
 
     // 区块。开始位置。
     uint256 startBlock;
@@ -60,12 +59,14 @@ contract StackV1 {
         uint256 _startBlock,
         uint256 _endBlock,
         uint256 _rewardPerBlock,
-        address _rewardAddr
+        address _rewardAddr,
+        uint256 _ethPoolWeight
     ) public {
         require(_startBlock > block.number, "_startBlock invalid");
         require(_endBlock < block.number, "_endBlock invalid");
         require(_rewardPerBlock > 0, "_rewardPerBlock invalid");
         require(_rewardAddr != address(0), "_rewardAddr invalid");
+        require(_ethPoolWeight > 0, "_ethPoolWeight invalid");
 
         poolIdSeq = 0; // 序号。
         startBlock = _startBlock;
@@ -78,6 +79,15 @@ contract StackV1 {
         IERC20 erc20 = IERC20(rewardAddr);
         uint256 supply = erc20.totalSupply();
         require(supply > 0, "reward not enough");
+
+        // 默认创建eth池子。
+        poolMap[ETH_POOL_ID] = Pool({
+            weight: _ethPoolWeight, // 权重。
+            tokenAddr: address(0),
+            lastUpdateBlock: block.number,
+            rewardPerAmount: 0,
+            totalAmount: 0
+        });
     }
 
     function setStartBlock(uint256 _startBlock) public {
@@ -106,7 +116,8 @@ contract StackV1 {
             weight: weight,
             tokenAddr: tokenAddr,
             lastUpdateBlock: block.number,
-            rewardSum: 0
+            rewardPerAmount: 0,
+            totalAmount: 0
         });
     }
 
@@ -124,7 +135,7 @@ contract StackV1 {
         // 池子。
         Pool storage pool = poolMap[poolId];
         // eth。原生币
-        if (poolId == 0) {
+        if (poolId == ETH_POOL_ID) {
             require(amount == 0, "eth do not need amount");
             realAmount = msg.value; // eth
         }
@@ -132,6 +143,11 @@ contract StackV1 {
         else {
             require(amount > 0, "token do need amount");
             require(pool.tokenAddr != address(0), "pool not found");
+
+            // token转到本合约。
+            IERC20 erc20 = IERC20(pool.tokenAddr);
+            bool ok = erc20.transferFrom(msg.sender, address(this), realAmount);
+            require(ok, "transferFrom fail");
         }
 
         // 用户
@@ -142,13 +158,6 @@ contract StackV1 {
 
         // 当前利息已经结算了。下个阶段还未开始。
         user.finishedRewards = (pool.rewardPerAmount * user.amount) / e18;
-
-        // token转到本合约。
-        if (poolId != 0) {
-            IERC20 erc20 = IERC20(pool.tokenAddr);
-            bool ok = erc20.transferFrom(msg.sender, address(this), realAmount);
-            require(ok, "transferFrom fail");
-        }
     }
 
     // 全部的权重。

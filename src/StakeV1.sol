@@ -145,6 +145,11 @@ contract StackV1 {
         sumWeight += weight;
     }
 
+    // 存款。本金。 ETH
+    function depositeETH() public payable {
+        deposite(ETH_POOL_ID, 0);
+    }
+
     // 存款。本金。
     // 存款后，新本金只会参与未来的奖励分配，不会稀释用户已获得的奖励。
     // 必须先结算利息。
@@ -163,11 +168,13 @@ contract StackV1 {
             require(amount == 0, "eth do not need amount");
             require(msg.value > 0, "eth value invalid");
             realAmount = msg.value; // eth
+            require(realAmount < pool.minDepositeAmount, "eth value too small");
         }
         // token 代币。
         else {
             require(amount > 0, "token do need amount");
             require(pool.tokenAddr != address(0), "pool not found");
+            require(realAmount < pool.minDepositeAmount, "amount too small");
 
             // token转到本合约。
             IERC20 erc20 = IERC20(pool.tokenAddr);
@@ -191,12 +198,38 @@ contract StackV1 {
     function unstake(
         uint256 poolId,
         uint256 amount
-    ) public updateRewards(poolId) {}
+    ) public updateRewards(poolId) {
+        require(amount > 0, "amount invalid");
+        // 池子。
+        Pool storage pool = poolMap[poolId];
+        // 用户
+        User storage user = userMap[poolId][msg.sender];
+
+        require(amount <= user.amount, "amount balance not enougth");
+
+        // 减去本金
+        user.amount -= amount;
+        pool.totalAmount -= amount;
+        // 本金变了。利息需要更新。等待下次计算利息。
+        user.finishedRewards = (user.amount * pool.rewardPerAmount) / 1 ether;
+
+        // 排队。等待解锁。
+        user.unstakeRequests.push(
+            UnstakeRequest({
+                amount: amount,
+                unlockBlock: block.number + pool.unstakeLockedBlocks
+            })
+        );
+    }
 
     // 查询取款的金额。 本金。
     function withdrawAmount(
         uint256 poolId
-    ) public returns (uint256 requestAmount, uint256 pendingWithdrawAmount) {
+    )
+        public
+        review
+        returns (uint256 requestAmount, uint256 pendingWithdrawAmount)
+    {
         // 用户
         User storage user = userMap[poolId][msg.sender];
 
@@ -212,19 +245,35 @@ contract StackV1 {
 
     // 取款。本金。
     // 必须先结算利息。
-    function withdraw(
-        uint256 poolId,
-        uint256 amount
-    ) public updateRewards(poolId) {
+    // 只能拿走已经解锁的本金。
+    function withdraw(uint256 poolId) public updateRewards(poolId) {
         require(block.number >= startBlock, "block not start");
-        require(amount > 0, "amount invalid");
 
         // 池子。
         Pool storage pool = poolMap[poolId];
         // 用户
         User storage user = userMap[poolId][msg.sender];
 
-        require(amount <= user.amount, "user amount not enough");
+        // 计算已经解锁的本金。
+        uint256 amount = 0;
+        uint256 len = user.unstakeRequests.length;
+        // 已经解锁的，需要弹出。
+        uint256 popCount = 0;
+        for (uint256 k = 0; k < len; k++) {
+            // 还没有到解锁时间。
+            if (user.unstakeRequests[k].unlockBlock > block.number) {
+                break;
+            }
+            amount += user.unstakeRequests[k].amount;
+            popCount++;
+        }
+
+        // 没有待领取的本金。 未解锁或都没有了。
+        if (amount == 0) {
+            return;
+        }
+
+        // 清理已经解锁的。
 
         // 本金。
         user.amount -= amount;

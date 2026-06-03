@@ -14,7 +14,7 @@ import {
 import {Pool, User, UnstakeRequest, IStake} from "./IStake.sol";
 
 // 质押。
-contract StackV1 is IStake, AccessControl, UUPSUpgradeable {
+contract StakeV1 is IStake, AccessControl, UUPSUpgradeable {
     using Strings for uint256;
     using Math for uint256;
 
@@ -101,7 +101,7 @@ contract StackV1 is IStake, AccessControl, UUPSUpgradeable {
         emit SetRewardPerBlock(msg.sender, rewardPerBlock);
     }
 
-    // 添加1个池子。
+    // 添加1个池子。 ETH 或 ERC20
     function addPool(
         uint256 weight,
         address tokenAddr, // 为0表示ETH

@@ -152,7 +152,7 @@ contract StackV1 is IStake, AccessControl, UUPSUpgradeable {
     }
 
     // 存款。本金。 ETH
-    function depositeETH() public payable {
+    function depositeEth() public payable {
         deposite(ETH_POOL_ID, 0);
     }
 
@@ -346,11 +346,16 @@ contract StackV1 is IStake, AccessControl, UUPSUpgradeable {
 
     // 计算利息。 每个用户操作前，触发更新自己的利息。
     modifier updateRewards(uint256 poolId) {
+        updateRewards_(poolId);
+        _;
+    }
+
+    // 计算利息。 每个用户操作前，触发更新自己的利息。
+    function updateRewards_(uint256 poolId) private {
         // 更新池子。
         updatePool(poolId);
         // 更新用户。
         updateUser(poolId);
-        _;
     }
 
     // 更新单个池子。

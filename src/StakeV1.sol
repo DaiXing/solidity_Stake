@@ -253,13 +253,16 @@ contract StackV1 {
         if (block.number <= pool.lastUpdateBlock) {
             return;
         }
+        if (block.number > endBlock) {
+            return;
+        }
         // 没有本金。
         if (pool.totalAmount == 0) {
             pool.lastUpdateBlock = block.number;
             return;
         }
 
-        // 区块的间隔。
+        // 区块的间隔。 只看单个池子。
         uint256 offBlock = block.number - pool.lastUpdateBlock;
         pool.lastUpdateBlock = block.number;
 

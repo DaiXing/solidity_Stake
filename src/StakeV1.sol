@@ -31,6 +31,15 @@ struct User {
     uint256 pendingRewards;
     // 利息。已结算。
     uint256 finishedRewards;
+    // 解质押的请求。
+    UnstakeRequest[] unstakeRequests;
+}
+// 解质押的请求。 防止挤兑。
+struct UnstakeRequest {
+    // 金额。
+    uint256 amount;
+    // 解锁的区块。
+    uint256 unlockBlock;
 }
 contract StackV1 {
     using Strings for uint256;
@@ -116,7 +125,7 @@ contract StackV1 {
         // ERC20 池子。
         else {
             poolIdSeq++;
-            uint256 poolIdNew = poolIdSeq;
+            poolIdNew = poolIdSeq;
         }
 
         poolMap[poolIdNew] = Pool({

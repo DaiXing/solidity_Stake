@@ -128,10 +128,15 @@ contract StackV1 {
             poolIdNew = poolIdSeq;
         }
 
+        // 判断起点。
+        uint256 lastUpdateBlock2 = (block.number > startBlock)
+            ? block.number
+            : startBlock;
+
         poolMap[poolIdNew] = Pool({
             weight: weight,
             tokenAddr: tokenAddr,
-            lastUpdateBlock: block.number,
+            lastUpdateBlock: lastUpdateBlock2,
             rewardPerAmount: 0,
             totalAmount: 0,
             minDepositeAmount: _minDepositeAmount,
@@ -187,6 +192,23 @@ contract StackV1 {
         uint256 poolId,
         uint256 amount
     ) public updateRewards(poolId) {}
+
+    // 查询取款的金额。 本金。
+    function withdrawAmount(
+        uint256 poolId
+    ) public returns (uint256 requestAmount, uint256 pendingWithdrawAmount) {
+        // 用户
+        User storage user = userMap[poolId][msg.sender];
+
+        uint256 len = user.unstakeRequests.length;
+        for (uint256 k = 0; k < len; len++) {
+            requestAmount += user.unstakeRequests[k].amount;
+            // 到达解锁了。 可以取款了。
+            if (block.number >= user.unstakeRequests[k].unlockBlock) {
+                pendingWithdrawAmount += user.unstakeRequests[k].amount;
+            }
+        }
+    }
 
     // 取款。本金。
     // 必须先结算利息。
@@ -276,17 +298,18 @@ contract StackV1 {
         if (block.number > endBlock) {
             return;
         }
+        // 暂存。
+        uint256 lastUpdateBlock2 = pool.lastUpdateBlock;
+        pool.lastUpdateBlock = block.number;
         // 没有本金。
         if (pool.totalAmount == 0) {
-            pool.lastUpdateBlock = block.number;
             return;
         }
 
         // todo 起始点block，应该用哪个？如果当前池子很老，则利息应该占大头。
 
         // 区块的间隔。 只看单个池子。
-        uint256 offBlock = block.number - pool.lastUpdateBlock;
-        pool.lastUpdateBlock = block.number;
+        uint256 offBlock = block.number - lastUpdateBlock2;
 
         // 本次的利息。
         uint256 offRewards = offBlock * rewardPerBlock;

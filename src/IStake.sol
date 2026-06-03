@@ -38,4 +38,33 @@ struct UnstakeRequest {
     uint256 unlockBlock;
 }
 
-interface IStake {}
+interface IStake {
+    event SetStartBlock(address indexed user, uint256 startBlock);
+    event SetEndBlock(address indexed user, uint256 endBlock);
+    event SetRewardPerBlock(address indexed user, uint256 rewardPerBlock);
+
+    event AddPool(
+        address indexed user,
+        uint256 indexed poolId,
+        uint256 weight,
+        address indexed tokenAddr,
+        uint256 minDepositeAmount,
+        uint256 unstakeLockedBlocks
+    );
+    event Deposite(
+        address indexed user,
+        uint256 indexed poolId,
+        uint256 amount
+    );
+    event Unstake(address indexed user, uint256 indexed poolId, uint256 amount);
+    event Withdraw(
+        address indexed user,
+        uint256 indexed poolId,
+        uint256 amount
+    );
+    event ClaimRewards(
+        address indexed user,
+        uint256 indexed poolId,
+        uint256 rewards
+    );
+}

@@ -6,11 +6,15 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+// import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {
+    UUPSUpgradeable
+} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import {Pool, User, UnstakeRequest, IStake} from "./IStake.sol";
 
 // 质押。
-contract StackV1 is IStake, AccessControl {
+contract StackV1 is IStake, AccessControl, UUPSUpgradeable {
     using Strings for uint256;
     using Math for uint256;
 
@@ -69,21 +73,32 @@ contract StackV1 is IStake, AccessControl {
         grantRole(UPGRADE_ROLE, msg.sender);
     }
 
+    // 升级，需要权限。
+    function _authorizeUpgrade(
+        address impl
+    ) internal override onlyRole(UPGRADE_ROLE) {}
+
     function setStartBlock(uint256 _startBlock) public onlyRole(ADMIN_ROLE) {
         require(_startBlock >= block.number, "_startBlock invalid");
         require(_startBlock < endBlock, "_startBlock invalid");
         startBlock = _startBlock;
+
+        emit SetStartBlock(msg.sender, startBlock);
     }
     function setEndBlock(uint256 _endBlock) public onlyRole(ADMIN_ROLE) {
         require(_endBlock >= block.number, "_endBlock invalid");
         require(_endBlock > startBlock, "_endBlock invalid");
         endBlock = _endBlock;
+
+        emit SetEndBlock(msg.sender, endBlock);
     }
     function setRewardPerBlock(
         uint256 _rewardPerBlock
     ) public onlyRole(ADMIN_ROLE) {
         require(_rewardPerBlock > 0, "_rewardPerBlock invalid");
         rewardPerBlock = _rewardPerBlock;
+
+        emit SetRewardPerBlock(msg.sender, rewardPerBlock);
     }
 
     // 添加1个池子。
@@ -125,6 +140,15 @@ contract StackV1 is IStake, AccessControl {
             unstakeLockedBlocks: _unstakeLockedBlocks
         });
         sumWeight += weight;
+
+        emit AddPool(
+            msg.sender,
+            poolIdNew,
+            weight,
+            tokenAddr,
+            _minDepositeAmount,
+            _unstakeLockedBlocks
+        );
     }
 
     // 存款。本金。 ETH
@@ -172,6 +196,8 @@ contract StackV1 is IStake, AccessControl {
 
         // 当前利息已经结算了。下个阶段还未开始。
         user.finishedRewards = (pool.rewardPerAmount * user.amount) / E18;
+
+        emit Deposite(msg.sender, poolId, realAmount);
     }
 
     // 解除质押。本金。
@@ -202,9 +228,11 @@ contract StackV1 is IStake, AccessControl {
                 unlockBlock: block.number + pool.unstakeLockedBlocks
             })
         );
+
+        emit Unstake(msg.sender, poolId, amount);
     }
 
-    // 查询取款的金额。 本金。
+    // 查询取款的本金。 返回申请的本金、可以领取的本金。
     function withdrawAmount(
         uint256 poolId
     )
@@ -229,7 +257,7 @@ contract StackV1 is IStake, AccessControl {
     // 必须先结算利息。
     // 只能拿走已经解锁的本金。
     function withdraw(uint256 poolId) public updateRewards(poolId) {
-        require(block.number >= startBlock, "block not start");
+        require(block.number >= endBlock, "block not end");
 
         // 池子。
         Pool storage pool = poolMap[poolId];
@@ -250,7 +278,7 @@ contract StackV1 is IStake, AccessControl {
             popCount++;
         }
 
-        // 没有待领取的本金。 未解锁或都没有了。
+        // 没有待领取的本金。 未解锁或领完了。
         if (amount == 0) {
             return;
         }
@@ -283,6 +311,8 @@ contract StackV1 is IStake, AccessControl {
             bool ok = erc20.transferFrom(address(this), msg.sender, amount);
             require(ok, "transferFrom fail");
         }
+
+        emit Withdraw(msg.sender, poolId, amount);
     }
 
     // 获得利息。
@@ -291,13 +321,15 @@ contract StackV1 is IStake, AccessControl {
         User storage user = userMap[poolId][msg.sender];
 
         // 用户的未提取的利息。
-        uint256 pending = user.pendingRewards;
+        uint256 rewards = user.pendingRewards;
         // 清空利息。
         user.pendingRewards = 0;
 
         // 把利息发给用户。
-        bool ok = IERC20(rewardAddr).transfer(msg.sender, pending);
+        bool ok = IERC20(rewardAddr).transfer(msg.sender, rewards);
         require(ok, "transfer fail");
+
+        emit ClaimRewards(msg.sender, poolId, rewards);
     }
 
     // 全部的权重。

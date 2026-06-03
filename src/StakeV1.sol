@@ -31,7 +31,7 @@ struct User {
 contract StackV1 {
     using Strings for uint256;
     using Math for uint256;
-    uint256 constant e18 = 1 ether;
+    uint256 constant E18 = 1 ether;
     uint256 constant ETH_POOL_ID = 0;
 
     // 区块。开始位置。
@@ -42,10 +42,8 @@ contract StackV1 {
     uint256 rewardPerBlock;
     // 奖励合约。发奖励。 IERC20
     address rewardAddr;
-    // 是否需要更新池子。
-    bool needUpdatePool;
-    // 最后更新的区块。
-    uint256 lastUpdateBlock;
+    // 总共的权重。减少遍历。
+    uint256 sumWeight;
 
     // 池子的ID 序号。
     uint256 poolIdSeq;
@@ -73,7 +71,6 @@ contract StackV1 {
         endBlock = _endBlock;
         rewardPerBlock = _rewardPerBlock;
         rewardAddr = _rewardAddr;
-        needUpdatePool = true;
 
         // 判断合约有效
         IERC20 erc20 = IERC20(rewardAddr);
@@ -88,6 +85,7 @@ contract StackV1 {
             rewardPerAmount: 0,
             totalAmount: 0
         });
+        sumWeight += _ethPoolWeight;
     }
 
     function setStartBlock(uint256 _startBlock) public {
@@ -119,6 +117,7 @@ contract StackV1 {
             rewardPerAmount: 0,
             totalAmount: 0
         });
+        sumWeight += weight;
     }
 
     // 存款。本金。
@@ -158,7 +157,7 @@ contract StackV1 {
         pool.totalAmount += realAmount;
 
         // 当前利息已经结算了。下个阶段还未开始。
-        user.finishedRewards = (pool.rewardPerAmount * user.amount) / e18;
+        user.finishedRewards = (pool.rewardPerAmount * user.amount) / E18;
     }
 
     // 解除质押。本金。
@@ -190,7 +189,7 @@ contract StackV1 {
         pool.totalAmount -= amount;
 
         // 当前利息已经结算了。下个阶段还未开始。
-        user.finishedRewards = (pool.rewardPerAmount * user.amount) / e18;
+        user.finishedRewards = (pool.rewardPerAmount * user.amount) / E18;
 
         // eth。原生币
         if (poolId == ETH_POOL_ID) {
@@ -225,12 +224,15 @@ contract StackV1 {
     }
 
     // 全部的权重。
-    function getTotalWeight() private returns (uint256 weightSum) {
+    function getTotalWeight() public view returns (uint256) {
         // 累加总权重。
-        for (uint256 index = 0; index <= poolIdSeq; ++index) {
-            Pool storage pool = poolMap[index];
-            weightSum += pool.weight;
-        }
+        // for (uint256 index = 0; index <= poolIdSeq; ++index) {
+        //     Pool storage pool = poolMap[index];
+        //     weightSum += pool.weight;
+        // }
+
+        // 减少遍历。
+        return sumWeight;
     }
 
     // 计算利息。 每个用户操作前，触发更新自己的利息。
@@ -272,8 +274,8 @@ contract StackV1 {
         uint256 rewardsThisPool = (offRewards * pool.weight) / weightSum;
 
         // 更新每份本金的利息。
-        // 先用 e18 扩大，防止精度丢失。
-        pool.rewardPerAmount += (rewardsThisPool * e18) / pool.totalAmount;
+        // 先用 E18 扩大，防止精度丢失。
+        pool.rewardPerAmount += (rewardsThisPool * E18) / pool.totalAmount;
     }
 
     // 用户存款取款，先结算利息。 只更新自己。
@@ -283,7 +285,7 @@ contract StackV1 {
 
         // 计算用户的应得利息。 【核心】
         // 用户的总利息
-        uint256 totalRewards = (pool.rewardPerAmount * user.amount) / e18; // 缩小精度。
+        uint256 totalRewards = (pool.rewardPerAmount * user.amount) / E18; // 缩小精度。
         // 总利息减去已结算的利息，等于本次增加的利息
         uint256 pending = totalRewards - user.finishedRewards;
         // 增加的利息
@@ -291,55 +293,4 @@ contract StackV1 {
         // 计算完成。
         user.finishedRewards = totalRewards;
     }
-
-    // 【废弃】
-    // 更新全部池子。主要是计算利息。
-    // 改为 按需计费。只更新单个池子。
-    function updateAllPool() private {
-        // 未开始或已经结束。忽略。
-        if (block.number <= startBlock || !needUpdatePool) {
-            return;
-        }
-
-        uint256 endBlock2 = block.number;
-        if (endBlock2 > endBlock) {
-            endBlock2 = endBlock;
-            // 结束了。
-            needUpdatePool = false;
-        }
-        // 隔了几个块。
-        uint256 offBlock = endBlock2 - startBlock;
-        // 总利息。
-        (bool ok, uint256 rewardTotal) = offBlock.tryMul(rewardPerBlock);
-        require(ok, "rewardTotal error");
-
-        // 累加总权重。
-        uint256 weightSum = 0;
-        for (uint256 index = 0; index <= poolIdSeq; ++index) {
-            Pool storage pool = poolMap[index];
-            weightSum += pool.weight;
-        }
-
-        // 把奖励分配给各个池子。
-        for (uint256 index = 0; index <= poolIdSeq; ++index) {
-            Pool storage pool = poolMap[index];
-            // 池子本次的利息。
-            uint256 rewardForPool = (rewardTotal * pool.weight) / weightSum;
-            pool.rewardSum += rewardForPool;
-            // 把利息，分配给用户。
-            updateAllUserInPool(pool, rewardForPool);
-        }
-
-        // 更新标记。
-        lastUpdateBlock = endBlock2;
-    }
-
-    // 【废弃】
-    // 错误。不要一次性都分配，因为用户可能非常多，几百万。
-    // 改为懒处理。按需分配。
-    // 把利息，分配给用户。
-    function updateAllUserInPool(
-        Pool storage pool,
-        uint256 rewardForPool
-    ) private {}
 }

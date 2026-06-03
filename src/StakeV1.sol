@@ -262,6 +262,8 @@ contract StackV1 {
             return;
         }
 
+        // todo 起始点block，应该用哪个？如果当前池子很老，则利息应该占大头。
+
         // 区块的间隔。 只看单个池子。
         uint256 offBlock = block.number - pool.lastUpdateBlock;
         pool.lastUpdateBlock = block.number;

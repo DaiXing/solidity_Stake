@@ -67,4 +67,52 @@ interface IStake {
         uint256 indexed poolId,
         uint256 rewards
     );
+
+    // 初始化。 代理模式，需要初始化。
+    function initialize(
+        uint256 _startBlock,
+        uint256 _endBlock,
+        uint256 _rewardPerBlock,
+        address _rewardAddr
+    ) external;
+
+    function setStartBlock(uint256 _startBlock) external;
+    function setEndBlock(uint256 _endBlock) external;
+    function setRewardPerBlock(uint256 _rewardPerBlock) external;
+    // 全部的权重。
+    function getTotalWeight() external returns (uint256);
+
+    // 添加1个池子。
+    function addPool(
+        uint256 weight,
+        address tokenAddr, // 为0表示ETH
+        uint256 _minDepositeAmount,
+        uint256 _unstakeLockedBlocks
+    ) external;
+
+    // 存款。本金。 ETH
+    function depositeEth() external payable;
+
+    // 存款。本金。
+    // 存款后，新本金只会参与未来的奖励分配，不会稀释用户已获得的奖励。
+    // 必须先结算利息。
+    function deposite(uint256 poolId, uint256 amount) external payable;
+
+    // 解除质押。本金。
+    // 先把请求，放入队列。防止挤兑。
+    // 必须先结算利息。
+    function unstake(uint256 poolId, uint256 amount) external;
+
+    // 查询取款的本金。 返回申请的本金、可以领取的本金。
+    function withdrawAmount(
+        uint256 poolId
+    ) external returns (uint256 requestAmount, uint256 pendingWithdrawAmount);
+
+    // 取款。本金。
+    // 必须先结算利息。
+    // 只能拿走已经解锁的本金。
+    function withdraw(uint256 poolId) external;
+
+    // 获得利息。
+    function claimRewards(uint256 poolId) external;
 }

@@ -274,6 +274,12 @@ contract StackV1 {
         }
 
         // 清理已经解锁的。
+        for (uint256 m = 0; m < len - popCount; m++) {
+            user.unstakeRequests[m] = user.unstakeRequests[m + popCount];
+        }
+        for (uint256 n = 0; n < popCount; n++) {
+            user.unstakeRequests.pop();
+        }
 
         // 本金。
         user.amount -= amount;

@@ -19,6 +19,10 @@ struct Pool {
     // 每个本金的利息。累计。
     // 核心原则：在需要计算用户奖励之前，确保 rewardPerShare 是最新的。
     uint256 rewardPerAmount;
+    // 最新质押数量。
+    uint256 minDepositeAmount;
+    // 解质押，需要锁多少个block。
+    uint256 unstakeLockedBlocks;
 }
 struct User {
     // 本金。
@@ -57,14 +61,12 @@ contract StackV1 {
         uint256 _startBlock,
         uint256 _endBlock,
         uint256 _rewardPerBlock,
-        address _rewardAddr,
-        uint256 _ethPoolWeight
+        address _rewardAddr
     ) public {
         require(_startBlock > block.number, "_startBlock invalid");
         require(_endBlock < block.number, "_endBlock invalid");
         require(_rewardPerBlock > 0, "_rewardPerBlock invalid");
         require(_rewardAddr != address(0), "_rewardAddr invalid");
-        require(_ethPoolWeight > 0, "_ethPoolWeight invalid");
 
         poolIdSeq = 0; // 序号。
         startBlock = _startBlock;
@@ -76,16 +78,6 @@ contract StackV1 {
         IERC20 erc20 = IERC20(rewardAddr);
         uint256 supply = erc20.totalSupply();
         require(supply > 0, "reward not enough");
-
-        // 默认创建eth池子。
-        poolMap[ETH_POOL_ID] = Pool({
-            weight: _ethPoolWeight, // 权重。
-            tokenAddr: address(0),
-            lastUpdateBlock: block.number,
-            rewardPerAmount: 0,
-            totalAmount: 0
-        });
-        sumWeight += _ethPoolWeight;
     }
 
     function setStartBlock(uint256 _startBlock) public {
@@ -104,18 +96,37 @@ contract StackV1 {
     }
 
     // 添加1个池子。
-    function addPool(uint256 weight, address tokenAddr) public {
+    function addPool(
+        uint256 weight,
+        address tokenAddr, // 为0表示ETH
+        uint256 _minDepositeAmount,
+        uint256 _unstakeLockedBlocks
+    ) public {
         require(weight > 0, "weight invalid");
-        require(tokenAddr > address(0), "tokenAddr invalid");
+        require(_minDepositeAmount > 0, "_minDepositeAmount invalid");
+        require(_unstakeLockedBlocks > 0, "_unstakeLockedBlocks invalid");
 
-        poolIdSeq++;
-        uint256 poolIdNew = poolIdSeq;
+        uint256 poolIdNew = 0;
+        // ETH 池子。
+        if (tokenAddr == address(0)) {
+            // 不能重复。
+            Pool storage pool = poolMap[poolIdNew];
+            require(pool.weight == 0, "eth pool repeat");
+        }
+        // ERC20 池子。
+        else {
+            poolIdSeq++;
+            uint256 poolIdNew = poolIdSeq;
+        }
+
         poolMap[poolIdNew] = Pool({
             weight: weight,
             tokenAddr: tokenAddr,
             lastUpdateBlock: block.number,
             rewardPerAmount: 0,
-            totalAmount: 0
+            totalAmount: 0,
+            minDepositeAmount: _minDepositeAmount,
+            unstakeLockedBlocks: _unstakeLockedBlocks
         });
         sumWeight += weight;
     }

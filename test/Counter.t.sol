@@ -31,9 +31,6 @@ contract CounterTest is Test {
     address userTom = address(0xBB);
 
     function setUp() public {
-        counter = new Counter();
-        counter.setNumber(0);
-
         vm.startPrank(userOwner);
 
         // 利息合约。
